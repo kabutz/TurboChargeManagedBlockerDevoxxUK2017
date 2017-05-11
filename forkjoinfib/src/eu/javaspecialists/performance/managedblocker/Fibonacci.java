@@ -8,12 +8,16 @@ import java.util.concurrent.*;
 // demo2: test100_000_000() time = 22470
 // demo3: test100_000_000() time = 14188
 // demo4: test100_000_000() time = 10356
+// demo5: test100_000_000() time = 7073
+
 
 
 // TODO: Would you like to subscribe to my free advanced Java newsletter?
 // TODO: Or are you subscribed already and would like to say "hi"?
 // TODO: Do both here: tinyurl.com/devoxxuk17
 public class Fibonacci {
+    private final BigInteger RESERVED = BigInteger.valueOf(-1000);
+
     public BigInteger f(int n) {
         Map<Integer, BigInteger> cache = new ConcurrentHashMap<>();
         cache.put(0, BigInteger.ZERO);
@@ -22,7 +26,7 @@ public class Fibonacci {
     }
 
     private BigInteger f(int n, Map<Integer, BigInteger> cache) {
-        BigInteger result = cache.get(n);
+        BigInteger result = cache.putIfAbsent(n, RESERVED);
         if (result == null) {
             int half = (n + 1) / 2;
 
@@ -42,12 +46,25 @@ public class Fibonacci {
                 } else {
                     result = f0.shiftLeft(1).add(f1).multiply(f1);
                 }
-                cache.put(n, result);
+                synchronized (RESERVED) {
+                    cache.put(n, result);
+                    RESERVED.notifyAll();
+                }
             } finally {
                 time = n > 10_000 ? System.currentTimeMillis() - time : 0;
                 if (time > 50) {
                     System.out.printf("f(%d) took %d ms%n", n, time);
                 }
+            }
+        } else if (result == RESERVED) {
+            try {
+                synchronized (RESERVED) {
+                    while ((result = cache.get(n)) == RESERVED) {
+                        RESERVED.wait();
+                    }
+                }
+            } catch (InterruptedException e) {
+                throw new CancellationException("interrupted");
             }
         }
         return result;
